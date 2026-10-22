@@ -1,0 +1,16 @@
+node_modules/
+**/node_modules/
+target/
+**/target/
+logs/
+**/logs/
+.idea/
+**/.idea/
+.metadata/
+**/.metadata/
+.vscode/
+**/.vscode/
+.env
+.env.*
+!.env.example
+*.log

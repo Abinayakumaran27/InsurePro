@@ -1,0 +1,21 @@
+{
+  "properties": [
+    {
+      "name": "spring.webflux.cors.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Global switch to enable or disable CORS handling in the API Gateway.",
+      "defaultValue": true
+    },
+    {
+      "name": "jwt.secret",
+      "type": "java.lang.String",
+      "description": "HMAC-SHA256 secret key used to validate JWT tokens at the gateway. Must match the secret configured in all downstream services."
+    },
+    {
+      "name": "management.zipkin.tracing.export.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether to export traces to the configured Zipkin endpoint.",
+      "defaultValue": true
+    }
+  ]
+}

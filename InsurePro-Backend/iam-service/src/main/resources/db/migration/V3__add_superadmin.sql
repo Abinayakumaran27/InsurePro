@@ -1,0 +1,1 @@
+-- V3: No-op — SuperAdmin user is created by SuperAdminInitializer at startup

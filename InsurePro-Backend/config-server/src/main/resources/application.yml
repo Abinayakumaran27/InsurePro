@@ -1,0 +1,43 @@
+﻿server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/configs
+  profiles:
+    active: native
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_USER:eurekaadmin}:${EUREKA_PASSWORD:Eureka@2024}@localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 0.0
+  zipkin:
+    tracing:
+      export:
+        enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.insurepro: DEBUG

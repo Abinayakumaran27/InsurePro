@@ -1,0 +1,300 @@
+﻿version: '3.8'
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# InsurePro â€” Complete Docker Compose Stack
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Startup order: infra â†’ config â†’ eureka â†’ gateway â†’ services
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: "3"
+
+x-app-resources: &app-resources
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+        cpus: '0.50'
+      reservations:
+        memory: 256M
+
+services:
+
+  # â”€â”€ Infrastructure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  mysql:
+    image: mysql:8.0
+    container_name: insurepro-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root@2024
+      MYSQL_USER: insurepro
+      MYSQL_PASSWORD: insurepro@2024
+    ports: ["3306:3306"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot@2024"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+    networks: [insurepro-net]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.00'
+        reservations:
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: insurepro-prometheus
+    restart: unless-stopped
+    ports: ["9091:9090"]
+    volumes: [./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    networks: [insurepro-net]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: insurepro-grafana
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: Admin@2024
+    volumes: [grafana-data:/var/lib/grafana]
+    depends_on: [prometheus]
+    networks: [insurepro-net]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  # â”€â”€ Platform Services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  config-server:
+    build: ./config-server
+    container_name: insurepro-config-server
+    restart: unless-stopped
+    ports: ["8888:8888"]
+    environment:
+      CONFIG_USER: configuser
+      CONFIG_PASS: Config@2024
+      EUREKA_HOST: eureka-server
+      EUREKA_USER: eurekaadmin
+      EUREKA_PASSWORD: Eureka@2024
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  eureka-server:
+    build: ./eureka-server
+    container_name: insurepro-eureka
+    restart: unless-stopped
+    ports: ["8761:8761"]
+    environment:
+      EUREKA_USER: eurekaadmin
+      EUREKA_PASSWORD: Eureka@2024
+    depends_on:
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  api-gateway:
+    build: ./api-gateway-service
+    container_name: insurepro-api-gateway
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    environment:
+      SERVER_PORT: 9090
+      EUREKA_HOST: eureka-server
+      EUREKA_USER: eurekaadmin
+      EUREKA_PASSWORD: Eureka@2024
+      CONFIG_SERVER_HOST: config-server
+      JWT_SECRET: ${JWT_SECRET:-InsureProSecureJWTSecretKey2024MustBeAtLeast256BitsForHS256Algorithm}
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  # â”€â”€ Domain Services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  iam-service:
+    build: ./iam-service
+    container_name: insurepro-iam
+    restart: unless-stopped
+    ports: ["8081:8081"]
+    environment: &common-env
+      DB_HOST: mysql
+      DB_USER: insurepro
+      DB_PASSWORD: insurepro@2024
+      EUREKA_HOST: eureka-server
+      EUREKA_USER: eurekaadmin
+      EUREKA_PASSWORD: Eureka@2024
+      CONFIG_SERVER_HOST: config-server
+      JWT_SECRET: ${JWT_SECRET:-InsureProSecureJWTSecretKey2024MustBeAtLeast256BitsForHS256Algorithm}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  customer-service:
+    build: ./customer-service
+    container_name: insurepro-customer
+    restart: unless-stopped
+    ports: ["8082:8082"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+      iam-service: {condition: service_started}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  policy-service:
+    build: ./policy-service
+    container_name: insurepro-policy
+    restart: unless-stopped
+    ports: ["8083:8083"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  claims-service:
+    build: ./claims-service
+    container_name: insurepro-claims
+    restart: unless-stopped
+    ports: ["8084:8084"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+      policy-service: {condition: service_started}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  premium-payment-service:
+    build: ./premium-payment-service
+    container_name: insurepro-payment
+    restart: unless-stopped
+    ports: ["8085:8085"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  notification-service:
+    build: ./notification-service
+    container_name: insurepro-notification
+    restart: unless-stopped
+    ports: ["8086:8086"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  audit-compliance-service:
+    build: ./audit-compliance-service
+    container_name: insurepro-audit
+    restart: unless-stopped
+    ports: ["8087:8087"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  analytics-service:
+    build: ./analytics-service
+    container_name: insurepro-analytics
+    restart: unless-stopped
+    ports: ["8088:8088"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+      claims-service: {condition: service_started}
+      premium-payment-service: {condition: service_started}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  underwriting-service:
+    build: ./underwriting-service
+    container_name: insurepro-underwriting
+    restart: unless-stopped
+    ports: ["8089:8089"]
+    environment: *common-env
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+  document-service:
+    build: ./document-service
+    container_name: insurepro-document
+    restart: unless-stopped
+    ports: ["8090:8090"]
+    environment:
+      <<: *common-env
+      DOCUMENT_STORAGE_PATH: /tmp/insurepro-docs
+    volumes: [document-storage:/tmp/insurepro-docs]
+    depends_on:
+      mysql: {condition: service_healthy}
+      eureka-server: {condition: service_healthy}
+    networks: [insurepro-net]
+    logging: *default-logging
+    <<: *app-resources
+
+volumes:
+  mysql-data:
+  grafana-data:
+  document-storage:
+
+networks:
+  insurepro-net:
+    driver: bridge

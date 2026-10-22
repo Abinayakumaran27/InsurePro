@@ -1,0 +1,259 @@
+﻿server:
+  port: ${SERVER_PORT:9090}
+
+spring:
+  application:
+    name: api-gateway-service
+  config:
+    import: optional:configserver:http://localhost:8888
+
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # CORS â€” allows the React dev servers (Vite :5173, CRA :3000, and any
+  # other origin listed below) to call the gateway from a browser.
+  # Add more allowed-origins here as needed (e.g. staging / prod URLs).
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  webflux:
+    cors:
+      enabled: true          # global switch â€” set false to disable entirely
+
+  cloud:
+    gateway:
+
+      # â”€â”€ Global CORS configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # This block applies to every route in the gateway.
+      # It runs BEFORE the JWT filter so preflight OPTIONS requests are
+      # answered immediately without hitting any downstream service.
+      globalcors:
+        add-to-simple-url-handler-mapping: true   # also covers non-gateway handlers
+        cors-configurations:
+          '[/**]':
+            # Origins allowed to call the API.
+            # List every front-end origin you run.
+            allowed-origin-patterns:
+              - "${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173}"
+
+            # HTTP methods the browser is allowed to use.
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+              - HEAD
+
+            # Headers the browser is allowed to send.
+            allowed-headers:
+              - Authorization
+              - Content-Type
+              - Accept
+              - X-Requested-With
+              - Origin
+              - Access-Control-Request-Method
+              - Access-Control-Request-Headers
+              - X-Correlation-ID
+
+            # Headers the browser JavaScript is allowed to READ from the response.
+            exposed-headers:
+              - Authorization
+              - Content-Disposition   # needed for file downloads
+              - X-Correlation-ID
+
+            # Allow cookies / Authorization header with credentials.
+            # Required because the frontend sends "Authorization: Bearer â€¦".
+            allow-credentials: true
+
+            # How long (seconds) the browser may cache the preflight result.
+            # 3600 = 1 hour.  Lower this (e.g. 60) during active development.
+            max-age: 3600
+
+      # â”€â”€ Service discovery via Eureka â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      # â”€â”€ Route definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # Every route uses lb:// (Eureka load-balanced URIs).
+      # The JwtValidationFilter is applied to every route; public paths
+      # (login, register, refresh, â€¦) are whitelisted inside the filter itself.
+      routes:
+
+        # â”€â”€ IAM / Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: iam-service
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Customer Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: customer-service
+          uri: lb://customer-service
+          predicates:
+            - Path=/api/v1/customers/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Policy Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: policy-service
+          uri: lb://policy-service
+          predicates:
+            - Path=/api/v1/policies/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Claims Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: claims-service
+          uri: lb://claims-service
+          predicates:
+            - Path=/api/v1/claims/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Premium & Payment Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: premium-payment-service
+          uri: lb://premium-payment-service
+          predicates:
+            - Path=/api/v1/invoices/**,/api/v1/payments/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Notification Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Audit & Compliance Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: audit-compliance-service
+          uri: lb://audit-compliance-service
+          predicates:
+            - Path=/api/v1/audit-logs/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Analytics Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: analytics-service
+          uri: lb://analytics-service
+          predicates:
+            - Path=/api/v1/analytics/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Underwriting Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: underwriting-service
+          uri: lb://underwriting-service
+          predicates:
+            - Path=/api/v1/underwriting/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Document Service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        - id: document-service
+          uri: lb://document-service
+          predicates:
+            - Path=/api/v1/documents/**
+          filters:
+            - StripPrefix=0
+            - JwtValidationFilter
+
+        # â”€â”€ Swagger / OpenAPI pass-through (no JWT required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Allows each service's Swagger UI to be reached through the gateway
+        # during development.  Remove or restrict in production.
+        - id: iam-swagger
+          uri: lb://iam-service
+          predicates:
+            - Path=/iam/swagger-ui/**,/iam/v3/api-docs/**
+          filters:
+            - StripPrefix=1
+
+        - id: customer-swagger
+          uri: lb://customer-service
+          predicates:
+            - Path=/customer/swagger-ui/**,/customer/v3/api-docs/**
+          filters:
+            - StripPrefix=1
+
+        - id: policy-swagger
+          uri: lb://policy-service
+          predicates:
+            - Path=/policy/swagger-ui/**,/policy/v3/api-docs/**
+          filters:
+            - StripPrefix=1
+
+        - id: claims-swagger
+          uri: lb://claims-service
+          predicates:
+            - Path=/claims/swagger-ui/**,/claims/v3/api-docs/**
+          filters:
+            - StripPrefix=1
+
+        - id: payment-swagger
+          uri: lb://premium-payment-service
+          predicates:
+            - Path=/payment/swagger-ui/**,/payment/v3/api-docs/**
+          filters:
+            - StripPrefix=1
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Eureka Client
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_USER:eurekaadmin}:${EUREKA_PASSWORD:Eureka@2024}@localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# JWT â€” must match the secret used in every downstream service.
+# Change this to a strong random value (â‰¥ 32 chars) before going to production.
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+jwt:
+  secret: ${JWT_SECRET:InsureProSecureJWTSecretKeyForHS256Algorithm}
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Actuator
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: ${ZIPKIN_PROBABILITY:0.1}
+  zipkin:
+    tracing:
+      export:
+        enabled: ${ZIPKIN_ENABLED:true}
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Logging
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+logging:
+  level:
+    root: INFO
+    '[org.springframework.cloud.gateway]': INFO
+    '[org.springframework.cloud.gateway.handler.cors]': DEBUG   # logs CORS decisions
+    '[com.insurepro]': DEBUG
+  file:
+    name: logs/api-gateway-service.log

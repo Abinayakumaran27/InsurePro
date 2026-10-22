@@ -1,0 +1,19 @@
+{
+  "properties": [
+    {
+      "name": "app.document.storage-path",
+      "type": "java.lang.String",
+      "description": "Filesystem path where uploaded documents are stored."
+    },
+    {
+      "name": "app.document.max-file-size-mb",
+      "type": "java.lang.Integer",
+      "description": "Maximum allowed upload file size in megabytes."
+    },
+    {
+      "name": "jwt.secret",
+      "type": "java.lang.String",
+      "description": "HMAC-SHA256 signing secret used to validate inbound JWT tokens."
+    }
+  ]
+}
